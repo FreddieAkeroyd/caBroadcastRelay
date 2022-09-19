@@ -19,6 +19,16 @@
 #include <cstdlib>
 #include <cstring>
 
+struct CaHeaderStd
+{
+    uint16_t command;
+    uint16_t payload_size;
+    uint16_t data_type;
+    uint16_t data_count;
+    uint32_t par1;
+    uint32_t par2;
+};
+
 struct ConnectionDetails
 {
     SOCKET sock;
@@ -164,6 +174,19 @@ int main(int argc, char **argv) {
                 int len = recvfrom(it->sock, buffer, sizeof(buffer), 0, (struct sockaddr*)&recv_addr, &recv_size);
                 if (len >= 0)
                 {
+                    int len_done = 0;
+                    while (len_done < len)
+                    {
+                        CaHeaderStd* msg = (CaHeaderStd*)(buffer + len_done);
+                        // fixup server address in reply to search, this will have been set to 0xffffffff
+                        // meaning use source of packet as server, but as we are forwarding we need to edit this
+                        // to the real ioc server name so a tcp conenction ismade to the right place
+                        if (ntohs(msg->command) == 6) {
+                            std::cerr << "Reply from IOC bound to tcp port " << ntohs(msg->data_type) << std::endl;
+                            msg->par1 = recv_addr.sin_addr.s_addr; // add real server address
+                        }
+                        len_done += sizeof(CaHeaderStd) + msg->payload_size;
+                    }    
                     std::cerr << "Sending reply size " << len << " to " << inet_ntoa(it->reply_to.sin_addr) << " port " << ntohs(it->reply_to.sin_port) << std::endl;
                     if (sendto(from_socket, buffer, len, 0, (struct sockaddr*)&(it->reply_to), sizeof(struct sockaddr_in)) < 0)
                     {
